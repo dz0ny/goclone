@@ -1,10 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"quickcheck/crawler"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 var mainURL string
@@ -24,6 +25,8 @@ func main() {
 	flag.Parse()
 	worker := crawler.Worker{crawler.NewRWMap(), crawler.NewRWMap()}
 	worker.Visit(mainURL, allowedDomains, maxDepth)
-	spew.Dump(worker.NotFound.List())
+	fmt.Println(worker.NotFound.List())
+	file, _ := json.MarshalIndent(worker.NotFound.List(), "", " ")
 
+	_ = ioutil.WriteFile(reportPath, file, 0644)
 }

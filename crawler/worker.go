@@ -70,8 +70,19 @@ func (w *Worker) AddNotFound(url string) bool {
 		w.NotFound.Inc(url)
 		return false
 	}
-	w.Done.Set(url, 1)
+	w.NotFound.Set(url, 1)
 	return true
+}
+
+func (w *Worker) Fetch(c *colly.Collector, link string) {
+	if w.AddDone(link) {
+		if err := c.Head(link); err != nil {
+			fmt.Println(err, link)
+			if err.Error() == "Not Found" {
+				w.AddNotFound(link)
+			}
+		}
+	}
 }
 
 func (w *Worker) Visit(target, allowed string, maxDepth int) {
@@ -92,47 +103,25 @@ func (w *Worker) Visit(target, allowed string, maxDepth int) {
 	c.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
 		// hyperlink reference
 		link := e.Attr("href")
-		// print css file was found
-		//fmt.Println("Css found", "-->", link)
-		if w.AddDone(link) {
-			if err := c.Head(link); err != nil {
-				fmt.Println(err, link)
-			}
-		}
+		w.Fetch(c, link)
 	})
 
 	// search for all script tags with src attribute -- JS
 	c.OnHTML("script[src]", func(e *colly.HTMLElement) {
 		// src attribute
 		link := e.Attr("src")
-		// Print link
-		//fmt.Println("Js found", "-->", link)
-		if w.AddDone(link) {
-			if err := c.Head(link); err != nil {
-				fmt.Println(err, link)
-			}
-		}
+		w.Fetch(c, link)
 	})
 
 	// serach for all img tags with src attribute -- Images
 	c.OnHTML("img[src]", func(e *colly.HTMLElement) {
 		// src attribute
 		link := e.Attr("src")
-		// Print link
-		//fmt.Println("Img found", "-->", link)
-		if w.AddDone(link) {
-			if err := c.Head(link); err != nil {
-				fmt.Println(err, link)
-			}
-		}
+		w.Fetch(c, link)
 		sets := e.Attr("srcset")
 		if sets != "" {
 			for _, img := range srcset.Parse(sets) {
-				if w.AddDone(img.URL) {
-					if err := c.Head(img.URL); err != nil {
-						fmt.Println(err, img.URL)
-					}
-				}
+				w.Fetch(c, img.URL)
 			}
 		}
 
@@ -161,11 +150,6 @@ func (w *Worker) Visit(target, allowed string, maxDepth int) {
 	})
 	c.OnRequest(func(c *colly.Request) {
 		fmt.Println(c.URL)
-	})
-	c.OnError(func(res *colly.Response, err error) {
-		if err.Error() == "Not Found" {
-			w.AddNotFound(res.Request.URL.String())
-		}
 	})
 
 	// Visit each url and wait for stuff to load :)
