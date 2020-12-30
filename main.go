@@ -1,7 +1,14 @@
 package main
 
-import "github.com/imthaghost/goclone/cmd"
+import (
+	"quickcheck/crawler"
+
+	"github.com/davecgh/go-spew/spew"
+)
 
 func main() {
-	cmd.Execute()
+
+	worker := crawler.Worker{}
+	worker.Visit("https://www.easyblognetworks.com/")
+	spew.Dump(worker.NotFound)
 }
