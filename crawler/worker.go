@@ -3,50 +3,89 @@ package crawler
 import (
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gocolly/colly"
 	"github.com/lukasbob/srcset"
 )
 
+type RWMap struct {
+	sync.RWMutex
+	m map[string]int
+}
+
+func NewRWMap() RWMap {
+	return RWMap{m: make(map[string]int)}
+}
+
+// Get is a wrapper for getting the value from the underlying map
+func (r RWMap) Get(key string) int {
+	r.RLock()
+	defer r.RUnlock()
+	return r.m[key]
+}
+
+// Set is a wrapper for setting the value of a key in the underlying map
+func (r RWMap) Set(key string, val int) {
+	r.Lock()
+	defer r.Unlock()
+	r.m[key] = val
+}
+
+// Inc increases the value in the RWMap for a key.
+//   This is more pleasant than r.Set(key, r.Get(key)++)
+func (r RWMap) Inc(key string) {
+	r.Lock()
+	defer r.Unlock()
+	r.m[key]++
+}
+
+func (r RWMap) Has(key string) bool {
+	r.Lock()
+	defer r.Unlock()
+	return r.m[key] > 0
+}
+
+func (r RWMap) List() map[string]int {
+	return r.m
+}
+
 type Worker struct {
-	NotFound []string
-	Done     []string
+	NotFound RWMap
+	Done     RWMap
 }
 
 func (w *Worker) AddDone(url string) bool {
-	if w.containsURL(w.Done, url) {
+	if w.Done.Has(url) {
+		w.Done.Inc(url)
 		return false
 	}
-	w.Done = append(w.Done, url)
+	w.Done.Set(url, 1)
 	return true
 }
 
 func (w *Worker) AddNotFound(url string) bool {
-	if w.containsURL(w.Done, url) {
+	if w.NotFound.Has(url) {
+		w.NotFound.Inc(url)
 		return false
 	}
-	w.Done = append(w.Done, url)
+	w.Done.Set(url, 1)
 	return true
 }
 
-func (w *Worker) containsURL(list []string, searchterm string) bool {
-	i := sort.SearchStrings(list, searchterm)
-	return i < len(list) && list[i] == searchterm
-}
-
-// Collector searches for css, js, and images within a given link
-func (w *Worker) Visit(target string) {
+func (w *Worker) Visit(target, allowed string, maxDepth int) {
 	// create a new collector
-
 	uri, _ := url.Parse(target)
+	allowedP := strings.Split(allowed, ",")
+	allowedP = append(allowedP, uri.Hostname())
 
 	c := colly.NewCollector(
 		// asychronus boolean
-		colly.Async(true),
+		colly.Async(false),
 		colly.CacheDir("/tmp"),
-		colly.AllowedDomains(uri.Hostname(), "cdn.paddle.com", "assets.calendly.com", "static.easyblognetworks.com", "fanstatic.niteo.co", "blog.easyblognetworks.com"),
+		colly.AllowedDomains(allowedP...),
+		colly.MaxDepth(maxDepth),
 	)
 
 	// search for all link tags that have a rel attribute that is equal to stylesheet - CSS
@@ -89,11 +128,11 @@ func (w *Worker) Visit(target string) {
 		sets := e.Attr("srcset")
 		if sets != "" {
 			for _, img := range srcset.Parse(sets) {
-
-				if err := c.Head(img.URL); err != nil {
-					fmt.Println(err, link)
+				if w.AddDone(img.URL) {
+					if err := c.Head(img.URL); err != nil {
+						fmt.Println(err, img.URL)
+					}
 				}
-
 			}
 		}
 
@@ -120,14 +159,15 @@ func (w *Worker) Visit(target string) {
 		}
 
 	})
-
+	c.OnRequest(func(c *colly.Request) {
+		fmt.Println(c.URL)
+	})
 	c.OnError(func(res *colly.Response, err error) {
 		if err.Error() == "Not Found" {
 			w.AddNotFound(res.Request.URL.String())
 		}
-		fmt.Println(err, res.Request.URL.String())
-
 	})
+
 	// Visit each url and wait for stuff to load :)
 	c.Visit(target)
 	c.Wait()
