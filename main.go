@@ -27,6 +27,6 @@ func main() {
 	worker.Visit(mainURL, allowedDomains, maxDepth)
 
 	file, _ := json.MarshalIndent(worker.NotFound.List(), "", " ")
-	fmt.Println(file)
+	fmt.Println(worker.NotFound.List())
 	_ = ioutil.WriteFile(reportPath, file, 0644)
 }
