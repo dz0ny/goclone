@@ -25,8 +25,8 @@ func main() {
 	flag.Parse()
 	worker := crawler.Worker{crawler.NewRWMap(), crawler.NewRWMap()}
 	worker.Visit(mainURL, allowedDomains, maxDepth)
-	fmt.Println(worker.NotFound.List())
-	file, _ := json.MarshalIndent(worker.NotFound.List(), "", " ")
 
+	file, _ := json.MarshalIndent(worker.NotFound.List(), "", " ")
+	fmt.Println(file)
 	_ = ioutil.WriteFile(reportPath, file, 0644)
 }
